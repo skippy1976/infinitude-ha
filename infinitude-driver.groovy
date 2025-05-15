@@ -12,7 +12,7 @@ metadata {
     definition(name: "Infinitude System", 
                namespace: "Infinitude", 
                author: "skippy76", 
-               importUrl: "") {
+               importUrl: "https://raw.githubusercontent.com/skippy1976/infinitude-ha/refs/heads/main/infinitude-driver.groovy") {
         		capability "Polling"
     }
 
