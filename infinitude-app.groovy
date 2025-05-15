@@ -12,7 +12,7 @@ definition(
     author: "skippy76",
     description: "Creates virtual devices for Carrier / Bryant thermostats.",
     category: "Convenience",
-    importUrl: "",
+    importUrl: "https://raw.githubusercontent.com/skippy1976/infinitude-ha/refs/heads/main/infinitude-app.groovy",
     iconUrl: "",
     iconX2Url: "",
     iconX3Url: "")
