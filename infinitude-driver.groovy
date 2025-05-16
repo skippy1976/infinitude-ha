@@ -1,7 +1,7 @@
 /*
  * Infinitude driver
  *
- * Intial release:
+ * Intial release: 0.0.1
  */
 
 import groovy.json.JsonOutput
@@ -13,13 +13,15 @@ metadata {
                namespace: "Infinitude", 
                author: "skippy76", 
                importUrl: "https://raw.githubusercontent.com/skippy1976/infinitude-ha/refs/heads/main/infinitude-driver.groovy") {
-        		capability "Polling"
+        	   capability "Polling"
     }
 
+    
     preferences {
         section("Infinitude Connection") {
 			def pollRate = ["0" : "Disabled", "1" : "Poll every minute", "5" : "Poll every 5 minutes", "10" : "Poll every 10 minutes", "15" : "Poll every 15 minutes", "30" : "Poll every 30 minutes (not recommended)"]
-			input ("poll_Rate", "enum", title: "Device Poll Rate", options: pollRate, defaultValue: 0)            
+			input (name: "poll_Rate", type: "enum", title: "Device Poll Rate", options: pollRate, defaultValue: 1)            
+            input (name: "holdDuration", type: "integer", title: "Hold duration in minutes", defaultValue: 60, submitOnChange: true)
         }
     }
 }
@@ -31,6 +33,9 @@ void installed()
 
 def updated() {
     ifDebug("updated...")
+    
+    ifDebug("Hold duration ${holdDuration}")
+    
 	switch(poll_Rate) {
 		case "0" :
 			ifDebug("Infinitude Polling is Disabled")
@@ -56,6 +61,7 @@ def updated() {
 			ifDebug("Poll Rate set at 30 minutes")
 			break
 	}
+
 }
 
 def poll() {
@@ -72,6 +78,8 @@ def createZone(zone, idx, zoneIdx, status, system){
     
     def zoneDevice = getChildDevice(name)
     
+    parent.subscribeToThermostatEvents(zoneDevice)
+    
     zoneDevice.setSupportedThermostatFanModes(JsonOutput.toJson(["low","medium","high","auto"]))
     zoneDevice.setSupportedThermostatModes(JsonOutput.toJson(["off", "fan only", "auto", "heat", "cool"]))
     
@@ -82,6 +90,8 @@ def updateZone(zone, name, status, system) {
     ifDebug("Setting thermostat properties ${name}")
     def zoneDevice = getChildDevice(name)
     
+	// Set the flag BEFORE updating the Hubitat device
+    state.updatingFromPhysicalThermostat = true    
 	zoneDevice.setTemperature(status.rt[0]) // real temperature status.rt[0]
     
     // setpoint depends on mode
@@ -92,11 +102,12 @@ def updateZone(zone, name, status, system) {
     if (system.mode[0] == "heat") {
     	zoneDevice.setThermostatSetpoint(status.htsp[0])  // heat setpoint status.htsp[0]
     }
-    
+
     zoneDevice.setCoolingSetpoint(status.clsp[0])
 	zoneDevice.setHeatingSetpoint(status.htsp[0])
     
     zoneDevice.setHumidity(status.rh[0]) // relative humidity status.rh[0]
+    
     zoneDevice.setThermostatMode(system.mode[0]) // system mode system.mode[0]
     if (status.fan[0] == "off") {
     	zoneDevice.setThermostatFanMode("auto") // zone fan mode status.fan[0]
@@ -105,6 +116,9 @@ def updateZone(zone, name, status, system) {
     }
     
     zoneDevice.setThermostatOperatingState(status.zoneconditioning[0]) // zone conditioning state status.zoneconditioning[0]
+    
+	// Set the flag AFTER updating the Hubitat device
+    state.updatingFromPhysicalThermostat = false
 }
 
 def removeZone(zoneInfo){
