@@ -275,6 +275,7 @@ def getSystemStatus() {
 // called following update
 void updated()
 {    
+    state.infinitudeIntegrationInstalled = true
     ifDebug("Updated [${settings.InfinitudeIP}]")
     ifDebug("Updated [${settings.InfinitudePort}]")
 
@@ -443,9 +444,16 @@ int findManualIdIndex(List<Map<String, Object>> listOfMaps) {
 
     for (int i = 0; i < listOfMaps.size(); i++) {
         def item = listOfMaps[i]
-        // Ensure the item is not null, has an 'id' key, and its value is "manual"
-        if (item != null && item.containsKey('id') && item.id == 'manual') {
-            return i
+
+        // IMPORTANT: Add a check to ensure 'item' is actually a Map
+        // before trying to access its properties like 'id'
+        if (item instanceof Map) {
+            if (item.containsKey('id') && item.id == 'manual') {
+                return i
+            }
+        } else {
+            // Log a warning if an unexpected object type is found in the list
+            log.warn "Infinitude Integration: findManualIdIndex: Unexpected object type found in activities list at index"
         }
     }
     return -1 // Return -1 if "manual" id is not found
