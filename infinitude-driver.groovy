@@ -2,12 +2,13 @@
  * Infinitude System driver
  *
  * Initial release: 0.0.1
+ * Revised: 0.0.2
  */
 
 import groovy.json.JsonOutput
 
 // A version function is good practice for tracking updates.
-def version() { return '0.0.1' }
+def version() { return '0.0.2' }
 
 metadata {
     definition(name: 'Infinitude System',
@@ -34,6 +35,7 @@ metadata {
         attribute "SystemVersion", "STRING"
         attribute "UVLevel", "INTEGER"
         attribute "HumidifierActive", "STRING"
+        attribute "SystemIndex", "NUMBER"
     }
 
     preferences {
@@ -51,8 +53,6 @@ metadata {
 
 def installed() {
     ifDebug('Infinitude driver Installed...')
-    // It's good practice to initialize on install.
-    initialize()
 }
 
 def uninstalled() {
@@ -105,6 +105,9 @@ def initialize() {
         log.warn "This driver must be used as a child of a parent application."
         return
     }
+
+    // Subscribe to location mode changes to trigger mode mapping.
+    subscribe(location, "mode", modeUpdateHandler)
 }
 
 def refresh() {
@@ -170,6 +173,7 @@ def updateSystem(systemConfig, systemStatus, idx) {
         sendEvent(name: "OutsideTemperature", value: "${systemStatus.oat[0]} ${tempUnit}")
         sendEvent(name: "TemperatureUnit", value: systemStatus.cfgem[0])
     }
+    sendEvent(name: "SystemIndex", value: idx)
 
     // Synchronize child zone devices
     syncZones(systemConfig, systemStatus, idx)
@@ -226,10 +230,9 @@ private createZone(zoneConfig, zoneStatus, systemConfig, systemIdx, zoneIdx) {
     ifDebug("Creating new zone: '${zoneName}' with DNI: ${dni}")
     try {
         def newZone = addChildDevice('Infinitude', 'Infinitude Zone', dni, [name: dni, isComponent: false, label: zoneName])
-        
-        // Subscribe to events from the new thermostat device so we can act on them.
-        parent?.subscribeToThermostatEvents(newZone)
 
+        // set the thermostat zone index
+        newZone.sendEvent(name: "ZoneIndex", value: zoneIdx)
         // Set the supported modes for the virtual thermostat. No need to convert to JSON.
         def fanModes = ["auto", "low", "medium", "high"]
         newZone.sendEvent(name: "SupportedThermostatFanModes", value: fanModes)
@@ -241,6 +244,49 @@ private createZone(zoneConfig, zoneStatus, systemConfig, systemIdx, zoneIdx) {
     } catch (e) {
         log.error "Error creating zone device ${dni}: ${e.message}"
     }
+}
+
+void modeUpdateHandler(evt) {
+    ifDebug("Location mode changed to '${evt.value}'.")
+    def settingName = "mode_${evt.value.replaceAll(/\s+/, "")}"
+    def infinitudeMode = parent.getSetting(settingName)
+
+    if (infinitudeMode) {
+        ifDebug("Mapping '${evt.value}' to Infinitude mode '${infinitudeMode}'.")
+        setInfinitudeSystemMode(infinitudeMode)
+    } else {
+        ifDebug("No mapping found for Hubitat mode '${evt.value}'. No action taken.")
+    }
+}
+
+// This method actually sends the mode change to the Infinitude server.
+void setInfinitudeSystemMode(String mode) {
+    def systemIndex = device.currentValue("SystemIndex").intValue()
+    ifDebug("Attempting to set Infinitude system mode to '${mode}' for system index ${systemIndex}")
+    def systems = getSystems()
+    if (!systems) {
+        log.error "Could not retrieve systems to set mode."
+        return
+    }
+
+    if (mode == "fan only") { mode = "fanonly" }
+
+    systems.system[systemIndex].config[0].mode[0] = [mode.toLowerCase()]
+
+    // Post the entire modified configuration back.
+    parent.updateSystems(systems)
+}
+
+def getModeMapping(settingName) {
+    return parent.getSetting(settingName)
+}
+
+def getSystems() {
+    return parent.getSystems()
+}
+
+def updateSystems(systems) {
+    parent.updateSystems(systems)
 }
 
 // Helper method for debug logging.

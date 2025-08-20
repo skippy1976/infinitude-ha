@@ -2,11 +2,14 @@
     Infinitude Zone driver
 
 * Intial release: 0.0.1
+* Revised: 0.0.2
 */
 
 import groovy.json.JsonOutput
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
-def version() { return '0.0.1' }
+def version() { return '0.0.2' }
 
 metadata {
     definition (
@@ -30,18 +33,16 @@ metadata {
         attribute "OverrideTemperatureModeReset", "STRING"
         attribute "TemperatureUnit", "STRING"
         attribute "ZoneConditioning", "STRING"
+        attribute "ZoneIndex", "NUMBER"
 
-        // Commands needed to change internal attributes of virtual device.
-        command "setTemperature", ["NUMBER"]
+        // Commands needed to change internal attributes of device
+        command "fanOnly", []
         command "setThermostatOperatingState", ["ENUM"]
-        command "setThermostatSetpoint", ["NUMBER"]
         command "setHumiditySetpoint", ["NUMBER"]
-        command "setSupportedThermostatFanModes", ["JSON_OBJECT"]
-        command "setSupportedThermostatModes", ["JSON_OBJECT"]
     }
 
     preferences {
-        input( name: "enableDebug", type:"bool", title: "Enable debug logging", defaultValue: false)
+        input( name: "enableDebug", type:"bool", title: "Enable debug logging", defaultValue: true)
     }
 }
 
@@ -58,10 +59,8 @@ def uninstalled() {
 
 def updated() {
     // called when settings updated for device (zone)
-    ifDebug('Infinitude zone device updated')
-    ifDebug("debug logging is: ${logEnable == true}")
-    if (logEnable) runIn(1800,logsOff)
-    initialize()
+    log.info('Infinitude zone device updated')
+    log.info("debug logging is: ${device.getSetting("enableDebug")}")
 }
 
 def subscribe() {
@@ -78,11 +77,62 @@ String label() {
 def initialize() {
     ifDebug('Initialize')
     // called when system startup occurs (capability.initialize)
+    // Subscribe to location mode changes to trigger mode mapping.
+    subscribe(location, "mode", modeUpdateHandler)
 }
 
 def refresh() {
     // called when the driver refresh occurs (capability.refresh)
     ifDebug('Infinitude zone driver refresh...')
+}
+
+def fanAuto() {
+    // called when changing fan mode to auto : Capability Thermostat
+    ifDebug('fanAuto() was called')
+    setThermostat(0, 'auto')
+}
+
+def fanCirculate() {
+    // called when (not sure) : Capability Thermostat
+    ifDebug('fanCirculate() was called')
+    setThermostat(0, 'circulate')
+}
+
+def fanOn() {
+    // called when turning fan on : Capability Thermostat
+    ifDebug('fanOn() was called')
+    setThermostat(0, 'on')
+}
+
+def setThermostatFanMode(fanmode) {
+    // called to set thermostat fan mode : Capability Thermostat
+    ifDebug('setThermostatFanMode() was called with mode ${fanmode}')
+
+    setThermostat(0, fanmode)
+}
+
+def setCoolingSetpoint(temperature) {
+    // called to set cooling setpoint : Capability Thermostat
+    ifDebug("setCoolingSetpoint(${temperature}) was called")
+    setThermostat(temperature, "cool")
+}
+
+def setHeatingSetpoint(temperature) {
+    // called to set heating setpoint : Capability Thermostat
+    ifDebug("setHeatingSetpoint(${temperature}) was called")
+    setThermostat(temperature, "heat")
+}
+
+def off() {
+    // called when changing mode to off : Capability Thermostat
+    ifDebug('off() was called')
+    setThermostatMode('off')
+}
+
+def fanOnly() {
+    // called when changing mode to fan only : - custom
+    ifDebug('fanOnly() was called')
+    setThermostatMode('fan only')
 }
 
 def auto() {
@@ -97,61 +147,22 @@ def cool() {
     setThermostatMode('cool')
 }
 
-def emergencyHeat() {
-    // called when changing mode to emergencyHeat : Capability Thermostat
-    ifDebug('heat() was called')
-    setThermostatMode('heat')
-}
-
-def fanAuto() {
-    // called when changing fan mode to auto : Capability Thermostat
-    ifDebug('fanAuto() was called')
-    setThermostatFanMode('auto')
-}
-
-def fanCirculate() {
-    // called when (not sure) : Capability Thermostat
-    ifDebug('fanCirculate() was called')
-    setThermostatFanMode('circulate')
-}
-
-def fanOn() {
-    // called when turning fan on : Capability Thermostat
-    ifDebug('fanOn() was called')
-    setThermostatFanMode('on')
-}
-
 def heat() {
     // called when changing mode to heat : Capability Thermostat
     ifDebug('heat() was called')
     setThermostatMode('heat')
 }
 
-def off() {
-    // called when changing mode to off : Capability Thermostat
-    ifDebug('off() was called')
-    setThermostatMode('off')
-}
-
-def setCoolingSetpoint(temperature) {
-    // called to set cooling setpoint : Capability Thermostat
-    ifDebug("setCoolingSetpoint(${setpoint}) was called")
-}
-
-def setHeatingSetpoint(temperature) {
-    // called to set heating setpoint : Capability Thermostat
-    ifDebug("setHeatingSetpoint(${setpoint}) was called")
-}
-
-def setThermostatFanMode(fanmode) {
-    // called to set thermostat fan mode : Capability Thermostat
-    ifDebug('setThermostatFanMode() was called')
+def emergencyHeat() {
+    // called when changing mode to emergencyHeat : Capability Thermostat
+    ifDebug('heat() was called')
+    setThermostatMode('heat')
 }
 
 def setThermostatMode(thermostatmode) {
     // called to set thermostat mode : Capability Thermostat
     ifDebug("setThermostatMode(${mode}) was called")
-    setThermostatOperatingState ('idle')
+    parent.setInfinitudeSystemMode(thermostatmode)
 }
 
 // *** Other methods
@@ -164,29 +175,69 @@ def setThermostatOperatingState(operatingState) {
     ifDebug("setThermostatOperatingState (${operatingState}) was called")
 }
 
-def setThermostatSetpoint(setpoint) {
-    ifDebug("setThermostatSetpoint(${setpoint}) was called")
-}
+private setThermostat(setpoint, mode) {
+    ifDebug("setThermostat(${setpoint}, ${mode}) was called")
 
-def setSupportedThermostatFanModes(fanModes) {
-    ifDebug "setSupportedThermostatFanModes(${fanModes}) was called"
-    // (auto, circulate, on)
-    sendEvent(name: "supportedThermostatFanModes", value: fanModes, descriptionText: getDescriptionText("supportedThermostatFanModes set to ${fanModes}"))
-}
+    def systemIndex = parent.currentValue("SystemIndex").intValue()
+    def zoneIndex = device.currentValue("ZoneIndex").intValue()
 
-def setSupportedThermostatModes(modes) {
-    ifDebug "setSupportedThermostatModes(${modes}) was called"
-    // (auto, cool, emergency heat, heat, off)
-    sendEvent(name: "supportedThermostatModes", value: modes, descriptionText: getDescriptionText("supportedThermostatModes set to ${modes}"))
+    def systems = parent.getSystems()
+
+    // get the activity index
+    def activityIndex = findManualIdIndex(systems.system[systemIndex].config[0].zones[0].zone[zoneIndex].activities[0].activity)
+
+    if (!systems) {
+        log.error "Could not retrieve systems to set mode."
+        return
+    }
+
+    if ((mode == "auto") || (mode == "circulate") || (mode == "on")) {
+        ifDebug("Attempting to set Thermostat Fan mode system mode to '${mode}' for system index ${systemIndex} and zone ${zoneIndex}")
+
+        if (mode == "auto") {
+            systems.system[systemIndex].config[0].zones[0].zone[zoneIndex].activities[0].activity[activityIndex].fan[0] = "off"
+        } else if (mode == "circulate") {
+            systems.system[systemIndex].config[0].zones[0].zone[zoneIndex].activities[0].activity[activityIndex].fan[0] = "low"
+        } else if (mode == "on") {
+            systems.system[systemIndex].config[0].zones[0].zone[zoneIndex].activities[0].activity[activityIndex].fan[0] = "high"
+        }
+
+    } else {
+        ifDebug("Attempting to set Thermostat Setpoint system mode to '${mode}' for system index ${systemIndex} and zone ${zoneIndex}")
+
+        if (mode.toLowerCase() == "cool") {
+            systems.system[systemIndex].config[0].zones[0].zone[zoneIndex].activities[0].activity[activityIndex].clsp[0] = setpoint.toString()
+        } else if  (mode.toLowerCase() == "heat") {
+            systems.system[systemIndex].config[0].zones[0].zone[zoneIndex].activities[0].activity[activityIndex].htsp[0] = setpoint.toString()
+        } else {
+            return log.warn("Invalid mode for setpoint ${mode}")
+        }
+    }
+
+    // check if zone is not already in hold
+    if (systems.system[systemIndex].config[0].zones[0].zone[zoneIndex].hold[0] == "off") {
+        // need to ensure hold is on
+        systems.system[systemIndex].config[0].zones[0].zone[zoneIndex].hold[0] = "on"
+        systems.system[systemIndex].config[0].zones[0].zone[zoneIndex].holdActivity[0] = ["manual"]
+        systems.system[systemIndex].config[0].zones[0].zone[zoneIndex].setback[0] = ["off"]
+    }
+
+    // check if holdDuration is 0, if so this means hold forever
+    if (parent.getSetting("holdDuration").toInteger() == 0) {
+        ifDebug("Hold forever")
+        systems.system[systemIndex].config[0].zones[0].zone[zoneIndex].otmr[0] = {}
+    } else {
+        // Calculate and set the end time for the hold using the app's setting
+        String holdTime = getFutureTimePlusMinutes(parent.getSetting("holdDuration").toInteger())
+        ifDebug("Hold end time set to ${holdTime}")
+        systems.system[systemIndex].config[0].zones[0].zone[zoneIndex].otmr[0] = holdTime
+    }
+
+    // Post the entire modified configuration back.
+    parent.updateSystems(systems)
 }
 
 // ***** Custom Methods *****
-
-def logsOff(){
-    // method to turn off logging
-    ifDebug('debug logging disabled...')
-    device.updateSetting('enableDebug', [value: 'false', type:'bool'])
-}
 
 def setSchedule(schedule) {
     sendEvent(name: "schedule", value: "${schedule}", descriptionText: getDescriptionText("schedule is ${schedule}"))
@@ -199,6 +250,38 @@ def parse(String description) {
 private getDescriptionText(msg) {
     def descriptionText = "${device.displayName} ${msg}"
     return descriptionText
+}
+
+void modeUpdateHandler(evt) {
+    ifDebug("Location mode changed to '${evt.value}'.")
+    def settingName = "mode_${evt.value.replaceAll(/\s+/, "")}"
+    def infinitudeMode = parent.getModeMapping(settingName)
+
+    if (infinitudeMode) {
+        ifDebug("Mapping '${evt.value}' to Infinitude mode '${infinitudeMode}'.")
+        setInfinitudeZoneMode(infinitudeMode)
+    } else {
+        ifDebug("No mapping found for Hubitat mode '${evt.value}'. No action taken.")
+    }
+}
+
+// This method actually sends the mode change to the Infinitude server.
+void setInfinitudeZoneMode(String mode) {
+    def systemIndex = parent.currentValue("SystemIndex").intValue()
+    def zoneIndex = device.currentValue("ZoneIndex").intValue()
+    ifDebug("Attempting to set Infinitude zone mode to '${mode}' for system index ${systemIndex} and zone index ${zoneIndex}")
+    def systems = parent.getSystems()
+    if (!systems) {
+        log.error "Could not retrieve systems to set mode."
+        return
+    }
+
+    if (mode == "fan only") { mode = "fanonly" }
+
+    systems.system[systemIndex].config[0].mode[0] = [mode.toLowerCase()]
+
+    // Post the entire modified configuration back.
+    parent.updateSystems(systems)
 }
 
 // Updates an existing zone child device with new data.
@@ -281,6 +364,29 @@ public updateZone(zoneConfig, zoneStatus, systemConfig) {
 
     // Clear the flag after all events have been sent.
     state.updatingFromPhysicalThermostat = false
+}
+
+// ***** Helper Methods *****
+
+// NEW: Calculates a future time based on the current time plus a number of minutes.
+String getFutureTimePlusMinutes(int minutes) {
+    LocalTime futureTime = LocalTime.now().plusMinutes(minutes)
+    DateTimeFormatter formatter = DateTimeFormatter.ofPattern('HH:mm')
+    return futureTime.format(formatter)
+}
+
+// Finds the index of the 'manual' activity profile in the zone configuration.
+int findManualIdIndex(List<Map<String, Object>> listOfMaps) {
+    if (listOfMaps == null) return -1
+    for (int i = 0; i < listOfMaps.size(); i++) {
+        def item = listOfMaps[i]
+        // The 'id' key in the JSON holds an array, so we check the first element.
+        if (item instanceof Map && item.id == 'manual') {
+            return i
+        }
+    }
+    log.warn "Could not find 'manual' activity in list."
+    return -1
 }
 
 // Helper method for debug logging.
