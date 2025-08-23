@@ -2,14 +2,14 @@
  * Infinitude App
  *
  * Initial release: 0.0.1
- * Revised: 0.0.2
+ * Revised: 0.0.3
  */
 
 import groovy.json.JsonSlurper
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
-def version() { return '0.0.2' }
+def version() { return '0.0.3' }
 
 definition(
     name: "Infinitude Integration",
@@ -283,17 +283,39 @@ private getSystems() {
 }
 
 private updateSystems(systems) {
+    if (state.refreshJobId != null) {
+        ifDebug("Cancelling refresh job ${state.refreshJobId}")
+        cancelRunIn(state.refreshJobId)
+        state.refreshJobId = null
+    }
+
     // Infinitude API expects the update on a specific path.
-    return httpPostExec('systems/infinitude', systems)
+    httpPostExec('systems/infinitude', systems)
+
+    state.refreshJobId = runIn(15, refreshFollowingSet)
 }
 
 private getSystemStatus() {
     return httpGetExec('status.json')
 }
 
+void refreshFollowingSet() {
+    ifDebug("Performing refresh following Set")
+
+    state.refreshJobId = null
+
+    pollInfinitude()
+}
+
 void pollInfinitude() {
     ifDebug("Polling Infinitude...")
     
+    if (state.refreshJobId != null) {
+        ifDebug("Cancelling refresh job ${state.refreshJobId}")
+        cancelRunIn(state.refreshJobId)
+        state.refreshJobId = null
+    }
+
     def systems = getSystems()
     def systemStatus = getSystemStatus()
     

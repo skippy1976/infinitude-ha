@@ -2,14 +2,14 @@
     Infinitude Zone driver
 
 * Intial release: 0.0.1
-* Revised: 0.0.2
+* Revised: 0.0.3
 */
 
 import groovy.json.JsonOutput
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
-def version() { return '0.0.2' }
+def version() { return '0.0.3' }
 
 metadata {
     definition (
@@ -286,7 +286,7 @@ void setInfinitudeZoneMode(String mode) {
 
 // Updates an existing zone child device with new data.
 public updateZone(zoneConfig, zoneStatus, systemConfig) {
-    ifDebug("Updating zone: ${label}")
+    ifDebug("Updating zone: ${device.label}")
 
     // This flag prevents command loops. Set it before sending events.
     state.updatingFromPhysicalThermostat = true
